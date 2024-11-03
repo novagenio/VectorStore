@@ -1,0 +1,7 @@
+langchain-community 
+faiss-cpu
+langchain-chroma
+langchain-mongodb
+langchain-qdrant
+langchain-elasticsearch
+langchain-pinecone
