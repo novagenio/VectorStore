@@ -1,5 +1,3 @@
-
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -30,20 +28,56 @@ def get_vectorStorage_mongo(embedding):
     return(vectorStore) 
 
 def get_vectorStorage_qdrant(embedding):
-    from langchain_qdrant import FastEmbedSparse, RetrievalMode
-    sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-    vectorStore = QdrantVectorStore.from_documents(
-        docs, embedding=embedding, sparse_embedding=sparse_embeddings,
-        location=":memory:", collection_name="my_documents",
-        retrieval_mode=RetrievalMode.HYBRID,)
+    from langchain_qdrant import QdrantVectorStore
+    qdrant = QdrantVectorStore.from_existing_collection(embedding=embedding, collection_name=key_param.QDRANT_collection_name, url=key_param.QDRANT_URL,)
     return(vectorStore)
 
-def get_similaruty_search(vectorStore, query):
+
+def get_vectorstorage_elasticsearch(embedding):
+    from langchain_elasticsearch import ElasticsearchStore
+    vectorStore = ElasticsearchStore(
+        es_cloud_id=key_param.es_cloud_id,
+        index_name=key_param.elastic_index_name,
+        embedding=embedding,
+        es_user=key_param.user_elastics,
+        es_password=key_param.pwd_elastic,
+    )
+    return(vectorStore)
+
+def get_vectorstorage_elasticsearch_docker(embedding):
+    from langchain_elasticsearch import ElasticsearchStore
+    vectorStore = ElasticsearchStore(
+        es_url=key_param.elastic_url_docker,
+        index_name=key_param.elastic_index_name,
+        embedding=embedding,
+    )
+    return(vectorStore)
+
+def get_vectorstorage_pinecone(embedding):
+    from pinecone import Pinecone, ServerlessSpec
+    pc = Pinecone(api_key=key_param.pinecone_api_key)
+    import time
+    index_name = key_param.pinecone_index_name  # change if desired
+    existing_indexes = [index_info["name"] for index_info in pc.list_indexes()]
+
+    if index_name not in existing_indexes:
+        pc.create_index(
+            name=index_name, dimension=1536 , # dimencion to  text-embedding-ada-002
+            metric="cosine",  spec=ServerlessSpec(cloud="aws", region="us-east-1"),)
+        while not pc.describe_index(index_name).status["ready"]:
+            time.sleep(1)
+    index = pc.Index(index_name)
+    from langchain_pinecone import PineconeVectorStore
+    vector_store = PineconeVectorStore(index=index, embedding=embedding)
+    return(vector_store)
+    
+
+def get_similarity_search(vectorStore, query):
     docs = vectorStore.similarity_search(query)
     similarity_output = docs[0].page_content
     return(similarity_output) 
 
-def llm_to_use():
+def define_language_generation_model():
     from langchain_openai import OpenAI
     import key_param
     llm = OpenAI(openai_api_key=key_param.openai_api_key, temperature=0)
@@ -63,7 +97,7 @@ def get_generative_answer(similarity_output, query):
     completion = client.chat.completions.create(
       model="gpt-4o",
       messages=[
-        {"role": "system", "content": "resprespond using only this information:" + context},
+        {"role": "system", "content": "Respond using only the follow information:" + context},
         {"role": "user", "content": query}
       ]
     )
@@ -71,21 +105,25 @@ def get_generative_answer(similarity_output, query):
     return(completion.choices[0].message)
 
 ############ main
-query = "Who can add or modify the above conditions through delegated acts"
+
+query = "How it will be enforced and what are the penalties?"
+
 embedding = define_embedding()
 #vectorStore = get_vectorStorage_faiss(embedding)
-#vectorStore = get_vectorStorage_chroma(embedding)
+#vectorStore = get_vectorstorage_pinecone(embedding)
 #vectorStore = get_vectorStorage_mongo(embedding)
-vectorStore = get_vectorStorage_qdrant(embedding)
-similarity_output = get_similaruty_search(vectorStore, query)
+#vectorStore = get_vectorStorage_qdrant(embedding)
+#vectorStore = get_vectorstorage_elasticsearch(embedding)
+vectorStore = get_vectorstorage_elasticsearch_docker(embedding)
 
-llm = llm_to_use()
-retriever_output = RetrievalQA_function(embedding, vectorStore)
+#vectorStore = get_vectorstorage_pinecone(embedding)
 
-print('similarity_output o contexto: ', similarity_output)
+
+similarity_output = get_similarity_search(vectorStore, query)
+llm = define_language_generation_model()
+
+print('similarity_output: ', similarity_output)
 print('')
-print('retriever_output: ', retriever_output)
-
 print('Generative')
-print('primera respeusta generativa: ', get_generative_answer(similarity_output, query))
+print('first generative answer ', get_generative_answer(similarity_output, query))
 
